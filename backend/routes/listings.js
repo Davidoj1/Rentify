@@ -141,6 +141,53 @@ function validateCategory(category) {
 
   return '';
 }
+/*
+ * GET /api/listings/host/:id
+ * Public host profile + active listings
+ */
+router.get('/host/:id', async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: 'Invalid host ID.'
+      });
+    }
+
+    const host = await User.findById(req.params.id);
+
+    if (!host) {
+      return res.status(404).json({
+        message: 'Host not found.'
+      });
+    }
+
+    const listings = await Listing.find({
+      ownerId: host._id,
+      available: true,
+      status: 'active'
+    }).sort({
+      createdAt: -1
+    });
+
+    res.json({
+      host: {
+        id: String(host._id),
+        name: host.name,
+        avatar: host.avatar || '',
+        bio: host.bio || '',
+        role: host.role,
+        verified: host.verified
+      },
+      listings: listings.map(cleanListing)
+    });
+  } catch (error) {
+    console.error('Get public host profile error:', error);
+
+    res.status(500).json({
+      message: 'Could not load host profile.'
+    });
+  }
+});
 
 /*
  * GET /api/listings
@@ -259,6 +306,53 @@ router.get('/', async (req, res) => {
 
     res.status(500).json({
       message: 'Could not load listings.'
+    });
+  }
+});
+/*
+ * GET /api/listings/host/:id
+ * Public host profile + active/available listings
+ */
+router.get('/host/:id', async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: 'Invalid host ID.'
+      });
+    }
+
+    const host = await User.findById(req.params.id);
+
+    if (!host) {
+      return res.status(404).json({
+        message: 'Host not found.'
+      });
+    }
+
+    const listings = await Listing.find({
+      ownerId: host._id,
+      available: true,
+      status: 'active'
+    }).sort({
+      createdAt: -1
+    });
+
+    res.json({
+      host: {
+        id: String(host._id),
+        name: host.name,
+        avatar: host.avatar || '',
+        bio: host.bio || '',
+        role: host.role,
+        verified: host.verified
+      },
+      listings: listings.map(cleanListing)
+    });
+  } catch (error) {
+    console.error('Get public host profile error:', error);
+
+    res.status(500).json({
+      message: 'Could not load host profile.'
     });
   }
 });

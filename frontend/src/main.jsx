@@ -402,6 +402,10 @@ Rentify<span>.ng</span> </div>
           <a onClick={() => nav('/dashboard')}>My bookings</a>
         ) : null}
 
+        <a onClick={() => nav('/about')}>
+          About Rentify
+        </a>
+
         <a onClick={() => nav('/safety')}>
           Safety
         </a>
@@ -442,6 +446,13 @@ Rentify<span>.ng</span> </div>
     <span>
       support@rentify.ng
     </span>
+
+    <button
+      className="footer-link"
+      onClick={() => go('/about')}
+    >
+      About
+    </button>
 
     <button
       className="footer-link"
@@ -550,137 +561,214 @@ Nigeria’s smart rental marketplace </p>
 }
 
 function Listings({ embedded = false }) {
-const route = useRoute();
-const { user } = useAuth();
+  const route = useRoute();
+  const { user } = useAuth();
 
-const params = new URLSearchParams(
-route.split('?')[1] || ''
-);
+  const params = new URLSearchParams(
+    route.split('?')[1] || ''
+  );
 
-const [listings, setListings] =
-useState([]);
+  const [listings, setListings] = useState([]);
+  const [q, setQ] = useState(params.get('q') || '');
+  const [category, setCategory] = useState(
+    params.get('category') || 'All'
+  );
 
-const [q, setQ] = useState(
-params.get('q') || ''
-);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [err, setErr] = useState('');
 
-const [category, setCategory] =
-useState(
-params.get('category') || 'All'
-);
+  const cats = [
+    'All',
+    'Apartments',
+    'Vehicles',
+    'Equipment',
+    'Warehouses',
+    'Event Items'
+  ];
 
-const [err, setErr] = useState('');
+  const load = () =>
+    api(
+      `/listings?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`
+    )
+      .then(d => {
+        setListings(d.listings || []);
+        setErr('');
+        setShowSuggestions(false);
+      })
+      .catch(e =>
+        setErr(e.message || 'Could not load listings.')
+      );
 
-const cats = [
-'All',
-'Apartments',
-'Vehicles',
-'Equipment',
-'Warehouses',
-'Event Items'
-];
+  useEffect(() => {
+    load();
+  }, [category]);
 
-const load = () =>
-api(
-`/listings?q=${encodeURIComponent(
-        q
-      )}&category=${encodeURIComponent(
-        category
-      )}`
-)
-.then(d => {
-setListings(d.listings || []);
-setErr('');
-})
-.catch(e =>
-setErr(
-e.message ||
-'Could not load listings.'
-)
-);
+  useEffect(() => {
+    const searchText = q.trim();
 
-useEffect(() => {
-load();
-}, [category]);
+    if (embedded || searchText.length < 2) {
+      setSuggestions([]);
+      return;
+    }
 
-return ( <section className="section"> <div className="section-head"> <div> <h2>
-{embedded
-? 'Featured rentals'
-: 'Explore rentals'} </h2>
+    const timer = setTimeout(() => {
+      api(
+        `/listings?q=${encodeURIComponent(searchText)}&category=${encodeURIComponent(category)}`
+      )
+        .then(d => {
+          setSuggestions(
+            (d.listings || []).slice(0, 5)
+          );
+        })
+        .catch(() => {
+          setSuggestions([]);
+        });
+    }, 300);
 
-      <p>
-        Nigerian listings with
-        transparent daily pricing.
-      </p>
-    </div>
+    return () => clearTimeout(timer);
+  }, [q, category, embedded]);
 
-    {!embedded && (
-      <button
-        onClick={() => go(user ? '/become-owner' : '/auth')}
-      >
-        <PlusCircle size={17} />
-        List yours
-      </button>
-    )}
-  </div>
+  const selectSuggestion = listing => {
+    setShowSuggestions(false);
+    setSuggestions([]);
+    go('/listing/' + listing.id);
+  };
 
-  <div className="filters">
-    <input
-      value={q}
-      onChange={e =>
-        setQ(e.target.value)
-      }
-      onKeyDown={e =>
-        e.key === 'Enter' && load()
-      }
-      placeholder="Search by item, city or category"
-    />
+  return (
+    <section className="section">
+      <div className="section-head">
+        <div>
+          <h2>
+            {embedded
+              ? 'Featured rentals'
+              : 'Explore rentals'}
+          </h2>
 
-    <button onClick={load}>
-      Search
-    </button>
-  </div>
+          <p>
+            Nigerian listings with transparent daily pricing.
+          </p>
+        </div>
 
-  <div className="tabs">
-    {cats.map(c => (
-      <button
-        className={
-          category === c
-            ? 'active'
-            : ''
-        }
-        onClick={() =>
-          setCategory(c)
-        }
-        key={c}
-      >
-        {c}
-      </button>
-    ))}
-  </div>
+        {!embedded && (
+          <button
+            onClick={() =>
+              go(user ? '/become-owner' : '/auth')
+            }
+          >
+            <PlusCircle size={17} />
+            List yours
+          </button>
+        )}
+      </div>
 
-  {err && (
-    <p className="error">{err}</p>
-  )}
+      <div className="filters">
+        <div className="listing-search">
+          <input
+            value={q}
+            onFocus={() => setShowSuggestions(true)}
+            onChange={e => {
+              setQ(e.target.value);
+              setShowSuggestions(true);
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                load();
+              }
 
-  <div className="grid">
-    {listings.map(l => (
-      <ListingCard
-        l={l}
-        key={l.id}
-      />
-    ))}
-  </div>
+              if (e.key === 'Escape') {
+                setShowSuggestions(false);
+              }
+            }}
+            placeholder="Search by item, city or category"
+            autoComplete="off"
+            aria-label="Search available rentals"
+          />
 
-  {!listings.length && (
-    <div className="empty">
-      No listings found. Try another
-      search or category.
-    </div>
-  )}
-</section>
-);
+          {!embedded &&
+            showSuggestions &&
+            q.trim().length >= 2 && (
+              <div className="listing-suggestions">
+                {suggestions.length > 0 ? (
+                  suggestions.map(listing => (
+                    <button
+                      type="button"
+                      className="listing-suggestion"
+                      key={listing.id}
+                      onClick={() =>
+                        selectSuggestion(listing)
+                      }
+                    >
+                      <img
+                        src={listing.images?.[0]}
+                        onError={imageFallback}
+                        alt=""
+                      />
+
+                      <span className="suggestion-info">
+                        <strong>
+                          {listing.title}
+                        </strong>
+
+                        <small>
+                          <MapPin size={12} />
+                          {listing.location}
+                        </small>
+                      </span>
+
+                      <strong className="suggestion-price">
+                        {money(listing.price)}/day
+                      </strong>
+                    </button>
+                  ))
+                ) : (
+                  <div className="suggestion-empty">
+                    No matching listings found.
+                  </div>
+                )}
+              </div>
+            )}
+        </div>
+
+        <button onClick={load}>
+          Search
+        </button>
+      </div>
+
+      <div className="tabs">
+        {cats.map(c => (
+          <button
+            className={category === c ? 'active' : ''}
+            onClick={() => setCategory(c)}
+            key={c}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {err && (
+        <p className="error">{err}</p>
+      )}
+
+      <div className="grid">
+        {listings.map(l => (
+          <ListingCard
+            l={l}
+            key={l.id}
+          />
+        ))}
+      </div>
+
+      {!listings.length && (
+        <div className="empty">
+          No listings found. Try another search or category.
+        </div>
+      )}
+    </section>
+  );
 }
+
 
 function ListingCard({ l }) {
 return (
@@ -772,11 +860,41 @@ const [loading, setLoading] =
 useState(false);
 
 useEffect(() => {
-api('/listings/' + id)
-.then(setData)
-.catch(e =>
-setErr(e.message)
-);
+  api('/listings/' + id)
+    .then(d => {
+      setData(d);
+
+      const pendingRaw = localStorage.getItem(
+        'rentify_pending_booking'
+      );
+
+      if (!pendingRaw) return;
+
+      try {
+        const pending = JSON.parse(pendingRaw);
+
+        if (String(pending.listingId) === String(id)) {
+          if (pending.startDate) {
+            setStart(pending.startDate);
+          }
+
+          if (pending.endDate) {
+            setEnd(pending.endDate);
+          }
+
+          localStorage.removeItem(
+            'rentify_pending_booking'
+          );
+        }
+      } catch {
+        localStorage.removeItem(
+          'rentify_pending_booking'
+        );
+      }
+    })
+    .catch(e =>
+      setErr(e.message)
+    );
 }, [id]);
 
 if (err) {
@@ -846,10 +964,6 @@ user &&
 user.role === 'admin');
 
 async function book() {
-if (!user) {
-return go('/auth');
-}
-
 if (!start || !end) {
   return setErr(
     'Please select start and end dates.'
@@ -863,6 +977,19 @@ if (
   return setErr(
     'End date must be after the start date.'
   );
+}
+
+if (!user) {
+  localStorage.setItem(
+    'rentify_pending_booking',
+    JSON.stringify({
+      listingId: id,
+      startDate: start,
+      endDate: end
+    })
+  );
+
+  return go('/auth');
 }
 
 setLoading(true);
@@ -1127,7 +1254,9 @@ go('/listings')
       >
         {loading
           ? 'Opening Paystack...'
-          : 'Request Booking'}
+          : user
+            ? 'Request Booking'
+            : 'Log in to book'}
       </button>
 
       <p className="muted">
@@ -1365,225 +1494,158 @@ Checking payment... </h1>
 }
 
 function Auth() {
-  const { login } = useAuth();
+const { login } = useAuth();
 
-  const [mode, setMode] =
-    useState('login');
+const [mode, setMode] =
+useState('login');
 
-  const [form, setForm] =
-    useState({});
+const [form, setForm] =
+useState({});
 
-  const [err, setErr] =
-    useState('');
+const [err, setErr] =
+useState('');
 
-  const [showPasswordRequirements, setShowPasswordRequirements] =
-    useState(false);
+async function submit(e) {
+e.preventDefault();
 
-  function validateSignupPassword(password) {
-    if (password.length < 8) {
-      return 'Password must be at least 8 characters long.';
+setErr('');
+
+try {
+  const res = await api(
+    '/auth/' +
+      (mode === 'login'
+        ? 'login'
+        : 'signup'),
+    {
+      method: 'POST',
+      body: JSON.stringify(form)
     }
+  );
 
-    if (password.length > 128) {
-      return 'Password must not exceed 128 characters.';
-    }
+  login(
+    res.user,
+    res.token
+  );
 
-    if (!/[A-Z]/.test(password)) {
-      return 'Password must contain at least one uppercase letter.';
-    }
+  const pendingRaw = localStorage.getItem(
+    'rentify_pending_booking'
+  );
 
-    if (!/[a-z]/.test(password)) {
-      return 'Password must contain at least one lowercase letter.';
-    }
+  if (pendingRaw) {
+    try {
+      const pending = JSON.parse(pendingRaw);
 
-    if (!/[0-9]/.test(password)) {
-      return 'Password must contain at least one number.';
-    }
-
-    if (!/[^A-Za-z0-9]/.test(password)) {
-      return 'Password must contain at least one special character.';
-    }
-
-    return '';
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-
-    setErr('');
-
-    if (mode === 'signup') {
-      const passwordError =
-        validateSignupPassword(form.password || '');
-
-      if (passwordError) {
-        setErr(passwordError);
+      if (pending?.listingId) {
+        go('/listing/' + pending.listingId);
         return;
       }
-    }
-
-    try {
-      const res = await api(
-        '/auth/' +
-          (mode === 'login'
-            ? 'login'
-            : 'signup'),
-        {
-          method: 'POST',
-          body: JSON.stringify(form)
-        }
-      );
-
-      login(
-        res.user,
-        res.token
-      );
-
-      go('/');
-    } catch (ex) {
-      setErr(
-        ex.message ||
-          'Authentication failed.'
+    } catch {
+      localStorage.removeItem(
+        'rentify_pending_booking'
       );
     }
   }
 
-  return (
-    <section className="auth">
-      <form onSubmit={submit}>
-        <h1>
-          {mode === 'login'
-            ? 'Welcome back'
-            : 'Join Rentify'}
-        </h1>
-
-        {mode === 'signup' && (
-          <input
-            placeholder="Full name"
-            value={form.name || ''}
-            autoComplete="name"
-            onChange={e =>
-              setForm({
-                ...form,
-                name: e.target.value
-              })
-            }
-          />
-        )}
-
-        <input
-          placeholder="Email"
-          type="email"
-          value={form.email || ''}
-          autoComplete={
-            mode === 'login'
-              ? 'username'
-              : 'email'
-          }
-          onChange={e =>
-            setForm({
-              ...form,
-              email: e.target.value
-            })
-          }
-        />
-
-        {mode === 'signup' && (
-          <input
-            placeholder="Phone +234..."
-            value={form.phone || ''}
-            autoComplete="tel"
-            onChange={e =>
-              setForm({
-                ...form,
-                phone: e.target.value
-              })
-            }
-          />
-        )}
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={form.password || ''}
-          autoComplete={
-            mode === 'login'
-              ? 'current-password'
-              : 'new-password'
-          }
-          minLength={mode === 'signup' ? 8 : undefined}
-          maxLength={128}
-          onFocus={() => {
-            if (mode === 'signup') {
-              setShowPasswordRequirements(true);
-            }
-          }}
-          onChange={e =>
-            setForm({
-              ...form,
-              password:
-                e.target.value
-            })
-          }
-        />
-
-        {mode === 'signup' &&
-          showPasswordRequirements && (
-            <div
-              style={{
-                marginTop: '-6px',
-                marginBottom: '12px',
-                fontSize: '13px',
-                color: '#64748b',
-                lineHeight: '1.5'
-              }}
-            >
-              <div>Password must contain:</div>
-              <div>• 8–128 characters</div>
-              <div>• At least one uppercase letter</div>
-              <div>• At least one lowercase letter</div>
-              <div>• At least one number</div>
-              <div>• At least one special character</div>
-            </div>
-          )}
-
-        {err && (
-          <p className="error">
-            {err}
-          </p>
-        )}
-
-        <button
-          className="wide"
-          type="submit"
-        >
-          {mode === 'login'
-            ? 'Sign in'
-            : 'Create account'}
-        </button>
-
-        <p
-          onClick={() => {
-            const nextMode =
-              mode === 'login'
-                ? 'signup'
-                : 'login';
-
-            setMode(nextMode);
-            setErr('');
-            setShowPasswordRequirements(false);
-          }}
-          className="link"
-        >
-          {mode === 'login'
-            ? 'Create new account'
-            : 'Already have an account?'}
-        </p>
-      </form>
-    </section>
+  go('/');
+} catch (ex) {
+  setErr(
+    ex.message ||
+      'Authentication failed.'
   );
 }
 
+}
+
+return ( <section className="auth"> <form onSubmit={submit}> <h1>
+{mode === 'login'
+? 'Welcome back'
+: 'Join Rentify'} </h1>
+
+    {mode === 'signup' && (
+      <input
+        placeholder="Full name"
+        value={form.name || ''}
+        onChange={e =>
+          setForm({
+            ...form,
+            name: e.target.value
+          })
+        }
+      />
+    )}
+
+    <input
+      placeholder="Email"
+      type="email"
+      value={form.email || ''}
+      onChange={e =>
+        setForm({
+          ...form,
+          email: e.target.value
+        })
+      }
+    />
+
+    {mode === 'signup' && (
+      <input
+        placeholder="Phone +234..."
+        value={form.phone || ''}
+        onChange={e =>
+          setForm({
+            ...form,
+            phone: e.target.value
+          })
+        }
+      />
+    )}
+
+    <input
+      type="password"
+      placeholder="Password"
+      value={form.password || ''}
+      onChange={e =>
+        setForm({
+          ...form,
+          password:
+            e.target.value
+        })
+      }
+    />
+
+
+    {err && (
+      <p className="error">
+        {err}
+      </p>
+    )}
+
+    <button className="wide">
+      {mode === 'login'
+        ? 'Sign in'
+        : 'Create account'}
+    </button>
+
+    <p
+      onClick={() => {
+        setMode(
+          mode === 'login'
+            ? 'signup'
+            : 'login'
+        );
+
+        setErr('');
+      }}
+      className="link"
+    >
+      {mode === 'login'
+        ? 'Create new account'
+        : 'Already have an account?'}
+    </p>
+  </form>
+</section>
+
+);
+}
 
 function BecomeOwner() {
   const { user, updateUser, activeMode, switchMode } = useAuth();
@@ -2891,99 +2953,46 @@ api('/listings/' + editId)
 }, [editId, isEdit]);
 
 async function handleImage(e) {
-  const file = e.target.files?.[0];
+const file =
+e.target.files?.[0];
 
-  if (!file) return;
+if (!file) return;
 
-  if (!file.type.startsWith('image/')) {
-    return setErr(
-      'Please upload a valid JPG, PNG or WebP image.'
-    );
-  }
+if (
+  !file.type.startsWith(
+    'image/'
+  )
+) {
+  return setErr(
+    'Please upload a valid image file.'
+  );
+}
 
-  if (file.size > 10 * 1024 * 1024) {
-    return setErr(
-      'Image is too large. Please choose an image below 10MB.'
-    );
-  }
+if (
+  file.size >
+  2 * 1024 * 1024
+) {
+  return setErr(
+    'Image is too large. Please choose an image below 2MB for now.'
+  );
+}
 
-  setSaving(true);
+try {
+  const image =
+    await readImageFile(file);
+
+  setForm(f => ({
+    ...f,
+    image
+  }));
+
   setErr('');
+} catch {
+  setErr(
+    'Could not read image. Please try another one.'
+  );
+}
 
-  try {
-    /*
-     * STEP 1:
-     * Ask our backend for a signed Cloudinary upload.
-     */
-    const signed = await api('/cloudinary/signature', {
-      method: 'POST'
-    });
-
-    /*
-     * STEP 2:
-     * Upload the image directly to Cloudinary.
-     *
-     * The Cloudinary API secret is NEVER sent here.
-     */
-    const uploadUrl =
-      `https://api.cloudinary.com/v1_1/` +
-      `${signed.cloudName}/image/upload`;
-
-    const formData = new FormData();
-
-    formData.append('file', file);
-    formData.append('api_key', signed.apiKey);
-    formData.append('timestamp', String(signed.timestamp));
-    formData.append('signature', signed.signature);
-    formData.append('folder', signed.folder);
-
-    const uploadResponse = await fetch(
-      uploadUrl,
-      {
-        method: 'POST',
-        body: formData
-      }
-    );
-
-    const uploadData =
-      await uploadResponse.json();
-
-    if (!uploadResponse.ok) {
-      throw new Error(
-        uploadData.error?.message ||
-        'Cloudinary image upload failed.'
-      );
-    }
-
-    if (!uploadData.secure_url) {
-      throw new Error(
-        'Cloudinary did not return an image URL.'
-      );
-    }
-
-    /*
-     * STEP 3:
-     * Store the Cloudinary URL in the listing form.
-     */
-    setForm(f => ({
-      ...f,
-      image: uploadData.secure_url
-    }));
-
-    setErr('');
-  } catch (error) {
-    console.error(
-      'Cloudinary upload failed:',
-      error
-    );
-
-    setErr(
-      error.message ||
-      'Could not upload image. Please try again.'
-    );
-  } finally {
-    setSaving(false);
-  }
 }
 
 async function submit(e) {
@@ -3457,14 +3466,15 @@ function Chat({ id }) {
   );
 }
 
-function Profile() {
+function ProfileEditor() {
 const { user, updateUser } = useAuth();
 
 const [form, setForm] = useState({
 name: user?.name || '',
 email: user?.email || '',
 phone: user?.phone || '',
-avatar: user?.avatar || ''
+avatar: user?.avatar || '',
+bio: user?.bio || ''
 });
 
 const [currentPassword, setCurrentPassword] = useState('');
@@ -3481,7 +3491,8 @@ setForm({
 name: user?.name || '',
 email: user?.email || '',
 phone: user?.phone || '',
-avatar: user?.avatar || ''
+avatar: user?.avatar || '',
+bio: user?.bio || ''
 });
 }, [user]);
 
@@ -3532,7 +3543,8 @@ body: JSON.stringify({
 name: form.name,
 email: form.email,
 phone: form.phone,
-avatar: form.avatar
+avatar: form.avatar,
+bio: form.bio
 })
 });
 
@@ -3542,7 +3554,8 @@ setForm({
 name: updatedUser.name || '',
 email: updatedUser.email || '',
 phone: updatedUser.phone || '',
-avatar: updatedUser.avatar || ''
+avatar: updatedUser.avatar || '',
+bio: updatedUser.bio || ''
 });
 setProfileMessage('Profile updated successfully.');
 } catch (e) {
@@ -3601,6 +3614,17 @@ return (
 <h1>My profile</h1>
 <p className="muted">Keep your Rentify contact details up to date.</p>
 </div>
+
+<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+<button
+type="button"
+className="secondary-wide"
+onClick={() => go('/profile')}
+style={{ width: 'auto' }}
+>
+View public profile
+</button>
+</div>
 </div>
 
 {err && <p className="error">{err}</p>}
@@ -3645,6 +3669,20 @@ Phone number
 <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+234..." />
 </label>
 
+<label>
+  Bio
+  <textarea
+    value={form.bio}
+    onChange={e => setForm({ ...form, bio: e.target.value })}
+    placeholder="Tell people a little about yourself..."
+    maxLength={200}
+    rows={4}
+  />
+  <small className="muted">
+    {form.bio.length}/200 characters
+  </small>
+</label>
+
 {profileMessage && <p className="safe">{profileMessage}</p>}
 
 <button className="wide" disabled={savingProfile}>
@@ -3680,6 +3718,393 @@ Confirm new password
 </button>
 </form>
 </div>
+</section>
+);
+}
+
+
+function PublicHostProfile({ id, ownProfile = false }) {
+  const { user } = useAuth();
+
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setErr('');
+    setData(null);
+
+    if (!id) {
+      setErr('We could not identify this host profile. Please sign in again.');
+      setLoading(false);
+      return;
+    }
+
+    api('/listings/host/' + encodeURIComponent(id))
+      .then(res => setData(res))
+      .catch(e => setErr(e.message || 'Could not load this host profile.'))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  async function shareProfile() {
+    if (!data?.host) return;
+
+    const url =
+      `${location.origin}${location.pathname}` +
+      `#/host/${data.host.id}`;
+
+    const text =
+      `Check out ${data.host.name || 'this Rentify host'} on Rentify.ng`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${data.host.name || 'Rentify host'} on Rentify.ng`,
+          text,
+          url
+        });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        alert('Profile link copied. You can paste it on WhatsApp.');
+      }
+    } catch {}
+  }
+
+  if (loading) {
+    return (
+      <section className="section">
+        <div className="empty">Loading host profile...</div>
+      </section>
+    );
+  }
+
+  if (err) {
+    return (
+      <section className="section">
+        <button
+          className="back-btn"
+          onClick={() => go(ownProfile ? '/' : '/listings')}
+        >
+          ← {ownProfile ? 'Back home' : 'Back to listings'}
+        </button>
+
+        <div className="info-card" style={{ marginTop: 16 }}>
+          <h1>Host profile unavailable</h1>
+          <p className="error">{err}</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!data?.host) {
+    return (
+      <section className="section">
+        <div className="info-card">
+          <h1>Host not found</h1>
+          <p className="muted">
+            This Rentify host profile could not be found.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const { host, listings = [] } = data;
+  const isOwnProfile =
+    user && String(user.id) === String(host.id);
+
+  const initials = String(host.name || 'H')
+    .trim()
+    .split(/\s+/)
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  return (
+    <section className="section">
+      <button
+        className="back-btn"
+        onClick={() => go(ownProfile ? '/' : '/listings')}
+      >
+        ← {ownProfile ? 'Back home' : 'Back to listings'}
+      </button>
+
+      <div
+        className="info-card"
+        style={{
+          maxWidth: 900,
+          margin: '16px auto 24px',
+          padding: 24
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 18,
+            flexWrap: 'wrap'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 18,
+              minWidth: 0
+            }}
+          >
+            {host.avatar ? (
+              <img
+                src={host.avatar}
+                onError={imageFallback}
+                alt={host.name || 'Host'}
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '3px solid #ccfbf1',
+                  flexShrink: 0
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: '#ccfbf1',
+                  color: '#0f766e',
+                  fontSize: 28,
+                  fontWeight: 800,
+                  border: '3px solid #ccfbf1',
+                  flexShrink: 0
+                }}
+              >
+                {initials}
+              </div>
+            )}
+
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap'
+                }}
+              >
+                <h1 style={{ margin: 0 }}>
+                  {host.name}
+                </h1>
+
+                {host.verified && (
+                  <ShieldCheck
+                    size={20}
+                    color="#0f766e"
+                    aria-label="Verified host"
+                  />
+                )}
+              </div>
+
+              <p
+                className="muted"
+                style={{ margin: '6px 0 0' }}
+              >
+                {host.role === 'owner'
+                  ? 'Rentify host'
+                  : 'Rentify member'}
+                {host.verified ? ' • Verified' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap'
+            }}
+          >
+            <button
+              className="share-btn"
+              onClick={shareProfile}
+            >
+              <Share2 size={17} />
+              Share profile
+            </button>
+
+            {(ownProfile || isOwnProfile) && (
+              <button
+                className="edit-btn"
+                onClick={() => go('/profile/edit')}
+              >
+                <Edit3 size={17} />
+                Edit profile
+              </button>
+            )}
+          </div>
+        </div>
+
+        {host.bio ? (
+          <div style={{ marginTop: 22 }}>
+            <h3 style={{ marginBottom: 7 }}>About</h3>
+            <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {host.bio}
+            </p>
+          </div>
+        ) : (
+          <p
+            className="muted"
+            style={{ marginTop: 22, marginBottom: 0 }}
+          >
+            This host has not added a bio yet.
+          </p>
+        )}
+      </div>
+
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">Rentify listings</p>
+          <h2>{host.name}'s active listings</h2>
+          <p className="muted">
+            {listings.length
+              ? `${listings.length} active listing${listings.length === 1 ? '' : 's'}`
+              : 'No active listings right now.'}
+          </p>
+        </div>
+      </div>
+
+      {listings.length ? (
+        <div className="grid">
+          {listings.map(listing => (
+            <ListingCard
+              key={listing.id}
+              l={listing}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">
+          This host does not have any active listings at the moment.
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+function Profile() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return (
+      <section className="section">
+        <div className="info-card">
+          <h1>My profile</h1>
+          <p className="muted">Please sign in to view your profile.</p>
+          <button className="wide" onClick={() => go('/auth')}>
+            Sign in
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const userId = user.id || user._id;
+
+  return <PublicHostProfile id={userId} ownProfile />;
+}
+
+function AboutPage() {
+return (
+<section className="section info-page">
+  <button
+    className="back-btn"
+    onClick={() => go('/')}
+  >
+    ← Back home
+  </button>
+
+  <div className="info-card" style={{ maxWidth: 820, margin: '0 auto' }}>
+    <p className="eyebrow">About Rentify.ng</p>
+
+    <h1>Making renting simpler, safer, and more transparent.</h1>
+
+    <p>
+      Rentify.ng is a Nigerian rental marketplace connecting renters with
+      owners, businesses, and service providers offering rentable assets.
+      During private beta, we are focused on learning from real users,
+      improving the booking and payment experience, and building a more
+      structured way to discover and rent assets in Nigeria.
+    </p>
+
+    <h2>What Rentify is building</h2>
+
+    <p>
+      The Nigerian rental market can be fragmented and difficult to navigate.
+      Rentify is designed to bring rental opportunities into one digital
+      marketplace where people can discover listings, review details,
+      communicate through the platform, and complete bookings through a
+      structured payment flow.
+    </p>
+
+    <p>
+      The long-term vision is to grow beyond property rentals into vehicles,
+      equipment, warehouses, event items, private jets, and other rentable
+      assets across Nigeria and eventually Africa.
+    </p>
+
+    <div style={{ marginTop: 24, padding: 20, borderRadius: 20, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+      <p className="eyebrow" style={{ marginBottom: 6 }}>Founder</p>
+      <h2 style={{ marginTop: 0, marginBottom: 6 }}>Ahiaba David Ojochegbe</h2>
+      <p style={{ fontWeight: 800, color: '#115e59', marginTop: 0 }}>
+        Founder &amp; CEO, Rentify.ng · Lagos, Nigeria
+      </p>
+      <p>
+        David is a Computer Science professional and technology entrepreneur
+        building Rentify.ng. His software development background and interest
+        in solving practical problems in the Nigerian and African market led
+        to the creation of Rentify.
+      </p>
+      <p>
+        His goal is to use technology to make rental discovery and transactions
+        more structured, convenient, and transparent while creating a platform
+        where renters and asset owners can connect.
+      </p>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+        <a
+          href="https://www.linkedin.com/in/david-ahiaba-a76887291/"
+          target="_blank"
+          rel="noreferrer"
+          className="secondary-wide"
+          style={{ textDecoration: 'none', display: 'inline-flex', width: 'auto' }}
+        >
+          LinkedIn
+        </a>
+        <a
+          href="https://github.com/Davidoj1"
+          target="_blank"
+          rel="noreferrer"
+          className="secondary-wide"
+          style={{ textDecoration: 'none', display: 'inline-flex', width: 'auto' }}
+        >
+          GitHub
+        </a>
+      </div>
+    </div>
+
+    <p className="safe" style={{ marginTop: 22 }}>
+      Rentify is currently in private beta in Nigeria. For support, contact
+      support@rentify.ng.
+    </p>
+  </div>
 </section>
 );
 }
@@ -3863,6 +4288,22 @@ page = <Profile />;
 }
 
 if (
+route === '/profile/edit'
+) {
+page = <ProfileEditor />;
+}
+
+if (
+route.startsWith('/host/')
+) {
+page = (
+<PublicHostProfile
+id={route.split('/')[2]}
+/>
+);
+}
+
+if (
 route === '/dashboard'
 ) {
 page = <Dashboard />;
@@ -3926,6 +4367,12 @@ route.startsWith(
 )
 ) {
 page = <PaymentVerify />;
+}
+
+if (
+route === '/about'
+) {
+page = <AboutPage />;
 }
 
 if (

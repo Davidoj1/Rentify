@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { auth } from '../middleware/auth.js';
 import { safeUser } from '../utils/format.js';
+import { sendWelcomeEmail } from '../utils/email.js';
 
 const router = express.Router();
 
@@ -168,6 +169,18 @@ router.post('/signup', async (req, res) => {
         avatar: ''
       });
 
+      try {
+        await sendWelcomeEmail({
+          email: user.email,
+          name: user.name
+        });
+      } catch (emailError) {
+        console.error(
+          'Welcome email error:',
+          emailError
+        );
+      }
+
     res.json({
       user: safeUser(user),
       token: signToken(user)
@@ -323,7 +336,8 @@ router.patch(
         name,
         email,
         phone,
-        avatar
+        avatar,
+        bio
       } = req.body || {};
 
       const user =
@@ -457,6 +471,20 @@ router.patch(
           user.avatar =
             avatarString;
         }
+      }
+
+      if (bio !== undefined) {
+        const cleanBio =
+          String(bio).trim();
+
+        if (cleanBio.length > 200) {
+          return res.status(400).json({
+            message:
+              'Bio is too long.'
+          });
+        }
+
+        user.bio = cleanBio;
       }
 
       await user.save();
