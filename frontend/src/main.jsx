@@ -4422,13 +4422,77 @@ return ( <>
     .stat-card { min-width: 0; padding: 14px; overflow-wrap: anywhere; }
     .list, .owner-list, .owner-bookings { min-width: 0; width: 100%; }
     footer { padding: 22px 16px; gap: 10px; }
+
+    /* App-wide mobile layout guardrails: keep each route inside the viewport. */
+    *, *::before, *::after { box-sizing: border-box; }
+    #root, #root > *, main, .app, .page, .section, .section > *,
+    .section-head, .hero, .hero > *, .detail, .detail-grid,
+    .owner-list, .owner-bookings, .list, .chat, .chatbox,
+    .auth, .bigform, .info-page, .info-card, .booking,
+    .dashboard, .stats, .grid, .catgrid, .filters, .tabs,
+    .card, .card-body, .profile-grid, .form-grid, .form-row,
+    .listing-detail, .gallery, .gallery-grid, .modal, .dialog {
+      min-width: 0;
+      max-width: 100%;
+    }
+    body { min-width: 0; }
+    h1, h2, h3, h4, p, a, label, small, strong, span,
+    button, input, textarea, select {
+      overflow-wrap: anywhere;
+    }
+    button, a, input, select, textarea { touch-action: manipulation; }
+    button, .icon, .cat, .tabs > button { min-height: 44px; }
+    .topbar { position: relative; z-index: 10; }
+    .topbar .brand { font-size: clamp(19px, 5vw, 22px); }
+    .topbar .icon { width: 44px; height: 44px; flex-basis: 44px; }
+    .hero { min-height: 0; }
+    .hero .eyebrow { font-size: 11px; letter-spacing: .12em; }
+    .hero h1 { max-width: 100%; }
+    .searchbox { min-height: 56px; align-items: center; }
+    .searchbox button { min-height: 42px; }
+    .section { margin-top: 0; }
+    .catgrid > *, .grid > *, .stats > * { min-width: 0; }
+    .card img, .card .cover { display: block; aspect-ratio: 4 / 3; }
+    .tabs { overscroll-behavior-x: contain; }
+    .filters input, .filters select, .filters textarea,
+    .bigform input, .bigform select, .bigform textarea,
+    .auth input, .auth select, .auth textarea,
+    .chat input { width: 100%; }
+    .bigform form, .auth form { width: 100%; min-width: 0; }
+    .chatbox { overflow-wrap: anywhere; }
+    .chat .filters { align-items: stretch; }
+    .chat .filters input { flex: 1 1 180px; }
+    .chat .filters button { flex: 0 0 auto; }
+    table { max-width: 100%; }
+    .table-wrap, .table-scroll, .owner-table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .drawer .panel { max-width: 100vw; overflow-x: hidden; }
+    .drawer .panel > a { align-self: stretch; }
+    footer, footer > * { min-width: 0; max-width: 100%; }
   }
   @media (max-width: 380px) {
     .section { padding-left: 11px; padding-right: 11px; }
     .grid { gap: 8px; }
     .card-body { padding: 8px; }
     .catgrid { gap: 7px; }
-    .hero h1 { font-size: 30px; }
+    .hero h1 { font-size: clamp(28px, 8vw, 30px); }
+    .topbar { padding: 9px 10px; gap: 7px; }
+    .topbar .brand { font-size: 19px; }
+    .topbar .icon { width: 42px; min-width: 42px; flex-basis: 42px; height: 42px; min-height: 42px; }
+    .grid { grid-template-columns: minmax(0, 1fr) !important; }
+    .catgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card h3 { font-size: 15px; }
+    .card-body { padding: 12px; }
+    .searchbox { flex-wrap: wrap; }
+    .searchbox input { flex-basis: calc(100% - 40px); }
+    .searchbox button { margin-left: auto; }
+  }
+  @media (min-width: 381px) and (max-width: 699px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 700px) and (max-width: 1024px) {
+    main, .section, .hero { min-width: 0; max-width: 100%; }
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .hero { gap: 24px; }
   }
 `}</style>
 <AuthProvider> <Layout>
