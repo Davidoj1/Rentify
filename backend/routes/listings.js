@@ -1,6 +1,8 @@
 import express from 'express';
 
-import Listing from '../models/Listing.js';
+import Listing, {
+  LISTING_CATEGORIES
+} from '../models/Listing.js';
 import User from '../models/User.js';
 import Review from '../models/Review.js';
 import Booking from '../models/Booking.js';
@@ -17,14 +19,7 @@ const MAX_RULES_LENGTH = 3000;
 const MAX_AMENITIES = 50;
 const MAX_IMAGES = 20;
 
-const ALLOWED_CATEGORIES = [
-  'Apartments',
-  'Houses',
-  'Rooms',
-  'Offices',
-  'Event Spaces',
-  'Other'
-];
+const ALLOWED_CATEGORIES = LISTING_CATEGORIES;
 
 function isValidObjectId(id) {
   return /^[a-fA-F0-9]{24}$/.test(String(id || ''));
@@ -433,7 +428,7 @@ router.post(
       );
 
       const category =
-        body.category || 'Apartments';
+        body.category || 'Shortlet Apartments';
 
       const price = Number(body.price);
 

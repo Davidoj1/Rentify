@@ -477,11 +477,12 @@ const [q, setQ] = useState('');
 
 const cats = [
 'All',
-'Apartments',
+'Shortlet Apartments',
 'Vehicles',
 'Equipment',
 'Warehouses',
-'Event Items'
+'Event Spaces/Centers',
+'Others'
 ];
 
 return ( <div> <section className="hero"> <div> <p className="eyebrow">
@@ -580,11 +581,12 @@ function Listings({ embedded = false }) {
 
   const cats = [
     'All',
-    'Apartments',
+    'Shortlet Apartments',
     'Vehicles',
     'Equipment',
     'Warehouses',
-    'Event Items'
+    'Event Spaces/Centers',
+    'Others'
   ];
 
   const load = () =>
@@ -2882,345 +2884,245 @@ return resolve('');
 }
 
 function CreateListing({ editId }) {
-const { user, activeMode } = useAuth();
+  const { user, activeMode } = useAuth();
+  const isEdit = Boolean(editId);
 
-if (!user || user.role !== 'owner' || activeMode !== 'owner') {
-  return <BecomeOwner />;
-}
+  const [form, setForm] = useState({
+    category: 'Shortlet Apartments',
+    amenities: '',
+    title: '',
+    price: '',
+    location: '',
+    description: '',
+    rules: ''
+  });
+  const [existingImages, setExistingImages] = useState([]);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const categories = [
+    'Shortlet Apartments',
+    'Vehicles',
+    'Equipment',
+    'Warehouses',
+    'Event Spaces/Centers',
+    'Others'
+  ];
+  const maxImages = 20;
+  const maxFileSize = 10 * 1024 * 1024;
 
-const isEdit =
-Boolean(editId);
+  useEffect(() => {
+    if (!isEdit) return;
+    api('/listings/' + editId)
+      .then(data => {
+        const listing = data.listing || data;
+        setForm({
+          category: listing.category || 'Shortlet Apartments',
+          amenities: (listing.amenities || []).join(', '),
+          title: listing.title || '',
+          price: listing.price ?? '',
+          location: listing.location || '',
+          description: listing.description || '',
+          rules: listing.rules || ''
+        });
+        setExistingImages(Array.isArray(listing.images) ? listing.images : []);
+      })
+      .catch(error => setErr(error.message || 'Could not load listing.'));
+  }, [editId, isEdit]);
 
-const [form, setForm] =
-useState({
-category: 'Apartments',
-amenities: '',
-title: '',
-price: '',
-location: '',
-image: '',
-description: '',
-rules: ''
-});
+  useEffect(() => {
+    const next = selectedFiles.map(file => URL.createObjectURL(file));
+    setPreviews(next);
+    return () => next.forEach(url => URL.revokeObjectURL(url));
+  }, [selectedFiles]);
 
-const [err, setErr] =
-useState('');
+  if (!user || (user.role !== 'owner' && user.role !== 'admin') || activeMode !== 'owner') {
+    return <BecomeOwner />;
+  }
 
-const [saving, setSaving] =
-useState(false);
+  function handleFiles(event) {
+    const incoming = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!incoming.length) return;
 
-useEffect(() => {
-if (!isEdit) return;
-
-api('/listings/' + editId)
-  .then(data => {
-    const l =
-      data.listing || data;
-
-    setForm({
-      category:
-        l.category ||
-        'Apartments',
-
-      amenities:
-        (
-          l.amenities || []
-        ).join(', '),
-
-      title:
-        l.title || '',
-
-      price:
-        l.price || '',
-
-      location:
-        l.location || '',
-
-      image:
-        l.images?.[0] || '',
-
-      description:
-        l.description || '',
-
-      rules:
-        l.rules || ''
-    });
-  })
-  .catch(e =>
-    setErr(e.message)
-  );
-
-}, [editId, isEdit]);
-
-async function handleImage(e) {
-const file =
-e.target.files?.[0];
-
-if (!file) return;
-
-if (
-  !file.type.startsWith(
-    'image/'
-  )
-) {
-  return setErr(
-    'Please upload a valid image file.'
-  );
-}
-
-if (
-  file.size >
-  2 * 1024 * 1024
-) {
-  return setErr(
-    'Image is too large. Please choose an image below 2MB for now.'
-  );
-}
-
-try {
-  const image =
-    await readImageFile(file);
-
-  setForm(f => ({
-    ...f,
-    image
-  }));
-
-  setErr('');
-} catch {
-  setErr(
-    'Could not read image. Please try another one.'
-  );
-}
-
-}
-
-async function submit(e) {
-e.preventDefault();
-
-setSaving(true);
-setErr('');
-
-try {
-  const body = {
-    ...form,
-
-    price: Number(
-      form.price
-    ),
-
-    images: form.image
-      ? [form.image]
-      : [],
-
-    amenities: String(
-      form.amenities || ''
-    )
-      .split(',')
-      .map(x => x.trim())
-      .filter(Boolean)
-  };
-
-  await api(
-    isEdit
-      ? '/listings/' +
-          editId
-      : '/listings',
-    {
-      method: isEdit
-        ? 'PUT'
-        : 'POST',
-
-      body: JSON.stringify(
-        body
-      )
+    const valid = [];
+    for (const file of incoming) {
+      if (!file.type.startsWith('image/')) {
+        setErr(`${file.name} is not an image file.`);
+        continue;
+      }
+      if (file.size > maxFileSize) {
+        setErr(`${file.name} is larger than 10 MB. Choose a smaller image.`);
+        continue;
+      }
+      valid.push(file);
     }
-  );
 
-  go(
-    isEdit
-      ? '/listing/' +
-          editId
-      : '/owner'
-  );
-} catch (ex) {
-  setErr(
-    ex.message ||
-      'Could not save listing.'
-  );
-} finally {
-  setSaving(false);
-}
+    const slots = maxImages - existingImages.length - selectedFiles.length;
+    if (valid.length > slots) {
+      setErr(`You can add up to ${maxImages} images per listing.`);
+    }
+    setSelectedFiles(current => [...current, ...valid].slice(0, Math.max(0, slots)));
+    if (valid.length && valid.length <= slots) setErr('');
+  }
 
-}
+  function removeExistingImage(index) {
+    setExistingImages(current => current.filter((_, i) => i !== index));
+  }
 
-return ( <section className="auth"> <form
-     onSubmit={submit}
-     className="bigform"
-   > <h1>
-{isEdit
-? 'Edit listing'
-: 'Create listing'} </h1>
+  function removeSelectedImage(index) {
+    setSelectedFiles(current => current.filter((_, i) => i !== index));
+  }
 
-    <input
-      placeholder="Title"
-      value={form.title}
-      onChange={e =>
-        setForm({
-          ...form,
-          title:
-            e.target.value
-        })
+  async function uploadSelectedImages() {
+    if (!selectedFiles.length) return [];
+    setUploading(true);
+    try {
+      // This endpoint is protected and returns a signed payload; the API secret stays on the server.
+      const signed = await api('/cloudinary/signature', { method: 'POST' });
+      if (!signed.cloudName || !signed.apiKey || !signed.timestamp || !signed.signature || !signed.folder) {
+        throw new Error('Cloudinary returned incomplete upload details. Check the backend configuration.');
       }
-    />
 
-    <select
-      value={form.category}
-      onChange={e =>
-        setForm({
-          ...form,
-          category:
-            e.target.value
-        })
-      }
-    >
-      {[
-        'Apartments',
-        'Vehicles',
-        'Equipment',
-        'Warehouses',
-        'Event Items'
-      ].map(c => (
-        <option key={c}>
-          {c}
-        </option>
-      ))}
-    </select>
+      const uploaded = await Promise.all(selectedFiles.map(async file => {
+        const payload = new FormData();
+        payload.append('file', file);
+        payload.append('api_key', signed.apiKey);
+        payload.append('timestamp', String(signed.timestamp));
+        payload.append('signature', signed.signature);
+        payload.append('folder', signed.folder);
 
-    <input
-      placeholder="Price per day e.g. 85000"
-      value={form.price}
-      onChange={e =>
-        setForm({
-          ...form,
-          price:
-            e.target.value
-        })
-      }
-    />
-
-    <input
-      placeholder="Location e.g. Lekki, Lagos"
-      value={form.location}
-      onChange={e =>
-        setForm({
-          ...form,
-          location:
-            e.target.value
-        })
-      }
-    />
-
-    <label className="upload">
-      <span>
-        Upload listing image
-      </span>
-
-      <input
-        type="file"
-        accept="image/*"
-        onChange={
-          handleImage
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(signed.cloudName)}/image/upload`, {
+          method: 'POST',
+          body: payload
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.secure_url) {
+          throw new Error(result.error?.message || `Could not upload ${file.name}.`);
         }
-      />
-    </label>
+        return result.secure_url;
+      }));
+      return uploaded;
+    } finally {
+      setUploading(false);
+    }
+  }
 
-    {form.image && (
-      <img
-        className="preview-img"
-        src={form.image}
-        onError={
-          imageFallback
-        }
-        alt="Listing preview"
-      />
-    )}
+  async function submit(event) {
+    event.preventDefault();
+    if (saving || uploading) return;
+    setErr('');
 
-    <textarea
-      placeholder="Description"
-      value={
-        form.description
-      }
-      onChange={e =>
-        setForm({
-          ...form,
-          description:
-            e.target.value
-        })
-      }
-    />
+    if (!form.title.trim() || !form.location.trim() || !form.price || !form.description.trim()) {
+      setErr('Please complete the title, price, location and description fields.');
+      return;
+    }
+    if (!Number.isFinite(Number(form.price)) || Number(form.price) <= 0) {
+      setErr('Enter a valid price greater than zero.');
+      return;
+    }
+    if (existingImages.length + selectedFiles.length > maxImages) {
+      setErr(`You can add up to ${maxImages} images per listing.`);
+      return;
+    }
 
-    <input
-      placeholder="Amenities separated by comma"
-      value={
-        form.amenities
-      }
-      onChange={e =>
-        setForm({
-          ...form,
-          amenities:
-            e.target.value
-        })
-      }
-    />
+    setSaving(true);
+    try {
+      const uploadedUrls = await uploadSelectedImages();
+      const body = {
+        ...form,
+        title: form.title.trim(),
+        location: form.location.trim(),
+        price: Number(form.price),
+        images: [...existingImages, ...uploadedUrls],
+        amenities: String(form.amenities || '').split(',').map(value => value.trim()).filter(Boolean)
+      };
 
-    <textarea
-      placeholder="Rules / policies"
-      value={form.rules}
-      onChange={e =>
-        setForm({
-          ...form,
-          rules:
-            e.target.value
-        })
-      }
-    />
+      await api(isEdit ? '/listings/' + editId : '/listings', {
+        method: isEdit ? 'PUT' : 'POST',
+        body: JSON.stringify(body)
+      });
+      go(isEdit ? '/listing/' + editId : '/owner');
+    } catch (error) {
+      setErr(error.message || 'Could not save listing.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
-    {err && (
-      <p className="error">
-        {err}
-      </p>
-    )}
+  return (
+    <section className="auth">
+      <form onSubmit={submit} className="bigform">
+        <h1>{isEdit ? 'Edit listing' : 'Create listing'}</h1>
 
-    <button
-      className="wide"
-      disabled={saving}
-    >
-      {saving
-        ? 'Saving...'
-        : isEdit
-        ? 'Save changes'
-        : 'Publish listing'}
-    </button>
+        <input required placeholder="Title" value={form.title}
+          onChange={event => setForm(current => ({ ...current, title: event.target.value }))} />
 
-    {isEdit && (
-      <button
-        type="button"
-        className="secondary-wide"
-        onClick={() =>
-          go(
-            '/listing/' +
-              editId
-          )
-        }
-      >
-        Cancel
-      </button>
-    )}
-  </form>
-</section>
+        <select required value={form.category}
+          onChange={event => setForm(current => ({ ...current, category: event.target.value }))}>
+          {categories.map(category => <option key={category} value={category}>{category}</option>)}
+        </select>
 
-);
+        <input required type="number" min="1" step="1" placeholder="Price per day e.g. 85000" value={form.price}
+          onChange={event => setForm(current => ({ ...current, price: event.target.value }))} />
+
+        <input required placeholder="Location e.g. Lekki, Lagos" value={form.location}
+          onChange={event => setForm(current => ({ ...current, location: event.target.value }))} />
+
+        <div className="upload">
+          <span style={{ display: 'block', fontWeight: 700, marginBottom: 8 }}>Listing photos</span>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#64748b' }}>
+            Choose photos from your phone or computer. Up to {maxImages} images, 10 MB each.
+            Photos upload securely to Cloudinary when you publish the listing.
+          </p>
+          <input type="file" accept="image/*" multiple onChange={handleFiles}
+            disabled={existingImages.length + selectedFiles.length >= maxImages} />
+        </div>
+
+        {(existingImages.length > 0 || previews.length > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
+            {existingImages.map((url, index) => (
+              <div key={`existing-${url}-${index}`} style={{ position: 'relative' }}>
+                <img src={url} alt={`Existing listing photo ${index + 1}`} className="preview-img"
+                  style={{ width: '100%', height: 110, objectFit: 'cover' }} onError={imageFallback} />
+                <button type="button" aria-label={`Remove existing photo ${index + 1}`}
+                  onClick={() => removeExistingImage(index)}
+                  style={{ position: 'absolute', top: 4, right: 4, padding: '4px 7px' }}>×</button>
+              </div>
+            ))}
+            {previews.map((url, index) => (
+              <div key={`${selectedFiles[index]?.name}-${index}`} style={{ position: 'relative' }}>
+                <img src={url} alt={`Selected listing photo ${index + 1}`} className="preview-img"
+                  style={{ width: '100%', height: 110, objectFit: 'cover' }} />
+                <button type="button" aria-label={`Remove selected photo ${index + 1}`}
+                  onClick={() => removeSelectedImage(index)}
+                  style={{ position: 'absolute', top: 4, right: 4, padding: '4px 7px' }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <textarea required placeholder="Description" value={form.description}
+          onChange={event => setForm(current => ({ ...current, description: event.target.value }))} />
+
+        <input placeholder="Amenities separated by comma" value={form.amenities}
+          onChange={event => setForm(current => ({ ...current, amenities: event.target.value }))} />
+
+        <textarea placeholder="Rules / policies" value={form.rules}
+          onChange={event => setForm(current => ({ ...current, rules: event.target.value }))} />
+
+        {err && <p className="error">{err}</p>}
+
+        <button className="wide" disabled={saving || uploading}>
+          {uploading ? 'Uploading photos...' : saving ? 'Saving...' : isEdit ? 'Save changes' : 'Publish listing'}
+        </button>
+
+        {isEdit && <button type="button" className="secondary-wide" onClick={() => go('/listing/' + editId)}>Cancel</button>}
+      </form>
+    </section>
+  );
 }
 
 function Chat({ id }) {
