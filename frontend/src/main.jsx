@@ -329,6 +329,81 @@ Rentify<span>.ng</span> </div>
 
   {open && (
     <div className="drawer">
+      <style>{`
+        .drawer .panel {
+          position: fixed;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: min(88vw, 360px);
+          height: 100vh;
+          height: 100dvh;
+          max-height: none !important;
+          box-sizing: border-box;
+          padding: 28px 20px 22px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+          background: #fff;
+          box-shadow: -18px 0 48px rgba(15, 23, 42, .16);
+        }
+        .drawer .panel h2 {
+          margin: 30px 0 12px;
+          font-size: 22px;
+          line-height: 1.25;
+          font-weight: 850;
+          letter-spacing: -.035em;
+          color: #111827;
+        }
+        .drawer .panel > a {
+          display: flex;
+          align-items: center;
+          min-height: 48px;
+          box-sizing: border-box;
+          padding: 12px 14px;
+          border-radius: 13px;
+          background: #f7f9fb;
+          color: #172033;
+          font-size: 15px;
+          line-height: 1.35;
+          font-weight: 700;
+          text-decoration: none;
+          cursor: pointer;
+          transition: background .15s ease, transform .15s ease;
+        }
+        .drawer .panel > a:active { background: #e8f4f2; transform: scale(.99); }
+        .drawer .panel > button:not(.close) {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          width: 100%;
+          min-height: 48px;
+          margin-top: auto;
+          padding: 13px 16px;
+          border-radius: 999px;
+          font-size: 15px;
+          font-weight: 800;
+        }
+        .drawer .panel > .close {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #f1f5f9;
+          color: #172033;
+        }
+        @media (min-width: 700px) {
+          .drawer .panel { width: 360px; padding-left: 24px; padding-right: 24px; }
+        }
+      `}</style>
       <div
         className="shade"
         onClick={() => setOpen(false)}
@@ -336,12 +411,7 @@ Rentify<span>.ng</span> </div>
 
       <nav
         className="panel"
-        style={{
-          maxHeight: 'calc(100vh - 32px)',
-          overflowY: 'auto',
-          overscrollBehavior: 'contain',
-          WebkitOverflowScrolling: 'touch'
-        }}
+        style={{ zIndex: 2 }}
       >
         <button
           className="close"
@@ -4295,8 +4365,65 @@ page = ( <InfoPage
 );
 }
 
-return ( <AuthProvider> <Layout>
+return ( <>
+<style>{`
+  * { box-sizing: border-box; }
+  img, input, textarea, select, button { max-width: 100%; }
+  html, body, #root { width: 100%; min-height: 100%; margin: 0; }
+  body { overflow-x: hidden; }
+  @media (max-width: 699px) {
+    .topbar { min-height: 58px; padding: 10px 14px; gap: 8px; }
+    .topbar .brand { font-size: 19px; }
+    .topbar .icon { min-width: 38px; min-height: 38px; padding: 8px; }
+    .beta { padding: 9px 12px; font-size: 11px; line-height: 1.45; text-align: center; }
+    main, main > div, main > section { width: 100%; max-width: 100%; min-width: 0; }
+    .hero { display: flex !important; flex-direction: column; gap: 18px; padding: 24px 16px 20px; margin: 0; width: 100%; }
+    .hero > div, .hero-card { width: 100%; min-width: 0; }
+    .hero h1 { font-size: clamp(30px, 8vw, 39px); line-height: 1.06; letter-spacing: -.045em; overflow-wrap: anywhere; }
+    .hero p { font-size: 14px; line-height: 1.55; }
+    .hero-card { padding: 16px; }
+    .searchbox { display: flex; width: 100%; gap: 7px; padding: 7px; }
+    .searchbox input { flex: 1 1 auto; min-width: 0; width: 0; font-size: 14px; }
+    .searchbox button { flex: 0 0 auto; padding: 10px 13px; }
+    .section { width: 100%; min-width: 0; padding: 22px 14px; margin-left: 0; margin-right: 0; }
+    .section h2 { font-size: 21px; line-height: 1.25; }
+    .section-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+    .section-head > * { min-width: 0; max-width: 100%; }
+    .catgrid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; width: 100%; }
+    .cat { min-width: 0; min-height: 44px; padding: 10px 8px; font-size: 13px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+    .filters { display: flex; flex-wrap: wrap; gap: 9px; width: 100%; }
+    .listing-search { flex: 1 1 100%; width: 100%; min-width: 0; }
+    .listing-search input { width: 100%; min-width: 0; font-size: 14px; }
+    .filters > button { min-height: 42px; }
+    .tabs { display: flex; gap: 7px; max-width: 100%; overflow-x: auto; padding: 4px 1px 9px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+    .tabs > button { flex: 0 0 auto; min-height: 38px; padding: 9px 13px; font-size: 12px; white-space: nowrap; }
+    .grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; width: 100%; min-width: 0; }
+    .card { width: 100%; min-width: 0; margin: 0; overflow: hidden; }
+    .card img, .card .cover { width: 100%; max-width: 100%; object-fit: cover; }
+    .card-body { padding: 10px; min-width: 0; }
+    .card h3, .card strong, .card p { overflow-wrap: anywhere; }
+    .card h3 { font-size: 13px; line-height: 1.35; }
+    .card-body .price, .price { font-size: 13px; }
+    .detail, .detail-grid { display: flex !important; flex-direction: column; gap: 16px; width: 100%; min-width: 0; }
+    .detail > *, .detail-grid > * { width: 100%; min-width: 0; }
+    .bigform, .auth, .chatbox, .system, .info-card, .booking, .owner-item { width: 100%; min-width: 0; max-width: 100%; }
+    input, textarea, select { min-width: 0; max-width: 100%; font-size: 16px; }
+    .stats { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat-card { min-width: 0; padding: 14px; overflow-wrap: anywhere; }
+    .list, .owner-list, .owner-bookings { min-width: 0; width: 100%; }
+    footer { padding: 22px 16px; gap: 10px; }
+  }
+  @media (max-width: 380px) {
+    .section { padding-left: 11px; padding-right: 11px; }
+    .grid { gap: 8px; }
+    .card-body { padding: 8px; }
+    .catgrid { gap: 7px; }
+    .hero h1 { font-size: 30px; }
+  }
+`}</style>
+<AuthProvider> <Layout>
 {page} </Layout> </AuthProvider>
+</>
 );
 }
 
