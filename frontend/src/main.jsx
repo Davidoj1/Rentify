@@ -359,6 +359,8 @@ Rentify<span>.ng</span> </div>
           color: #111827;
         }
         .drawer .panel > a {
+          width: 100%;
+          flex: 0 0 auto;
           display: flex;
           align-items: center;
           min-height: 48px;
@@ -376,6 +378,7 @@ Rentify<span>.ng</span> </div>
         }
         .drawer .panel > a:active { background: #e8f4f2; transform: scale(.99); }
         .drawer .panel > button:not(.close) {
+          flex: 0 0 auto;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -399,6 +402,12 @@ Rentify<span>.ng</span> </div>
           border-radius: 50%;
           background: #f1f5f9;
           color: #172033;
+        }
+        @media (max-width: 699px) {
+          .drawer .panel { width: min(88vw, 380px); padding: 26px 20px max(24px, env(safe-area-inset-bottom)); gap: 11px; }
+          .drawer .panel h2 { margin-top: 34px; margin-bottom: 12px; font-size: 24px; }
+          .drawer .panel > a { min-height: 50px; width: 100%; padding: 14px 16px; font-size: 16px; font-weight: 750; }
+          .drawer .panel > button:not(.close) { min-height: 50px; margin-top: auto; }
         }
         @media (min-width: 700px) {
           .drawer .panel { width: 360px; padding-left: 24px; padding-right: 24px; }
@@ -4372,20 +4381,21 @@ return ( <>
   html, body, #root { width: 100%; min-height: 100%; margin: 0; }
   body { overflow-x: hidden; }
   @media (max-width: 699px) {
-    .topbar { min-height: 58px; padding: 10px 14px; gap: 8px; }
-    .topbar .brand { font-size: 19px; }
-    .topbar .icon { min-width: 38px; min-height: 38px; padding: 8px; }
-    .beta { padding: 9px 12px; font-size: 11px; line-height: 1.45; text-align: center; }
+    .topbar { min-height: 68px; padding: 11px 16px; gap: 10px; align-items: center; }
+    .topbar .brand { font-size: 21px; font-weight: 900; letter-spacing: -.045em; white-space: nowrap; margin-right: auto; }
+    .topbar .icon { flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 10px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+    .topbar .icon svg { width: 22px; height: 22px; stroke-width: 2.2; }
+    .beta { padding: 10px 14px; font-size: 12px; line-height: 1.45; text-align: center; }
     main, main > div, main > section { width: 100%; max-width: 100%; min-width: 0; }
-    .hero { display: flex !important; flex-direction: column; gap: 18px; padding: 24px 16px 20px; margin: 0; width: 100%; }
-    .hero > div, .hero-card { width: 100%; min-width: 0; }
-    .hero h1 { font-size: clamp(30px, 8vw, 39px); line-height: 1.06; letter-spacing: -.045em; overflow-wrap: anywhere; }
-    .hero p { font-size: 14px; line-height: 1.55; }
-    .hero-card { padding: 16px; }
+    .hero { display: flex !important; flex-direction: column; gap: 12px; padding: 20px 16px 14px; margin: 0; width: 100%; }
+    .hero > div { width: 100%; min-width: 0; }
+    .hero h1 { font-size: clamp(31px, 8.3vw, 40px); line-height: 1.04; letter-spacing: -.05em; overflow-wrap: anywhere; margin-top: 8px; margin-bottom: 10px; }
+    .hero p { font-size: 14px; line-height: 1.45; margin-top: 8px; margin-bottom: 12px; }
+    .hero-card { display: none !important; }
     .searchbox { display: flex; width: 100%; gap: 7px; padding: 7px; }
     .searchbox input { flex: 1 1 auto; min-width: 0; width: 0; font-size: 14px; }
     .searchbox button { flex: 0 0 auto; padding: 10px 13px; }
-    .section { width: 100%; min-width: 0; padding: 22px 14px; margin-left: 0; margin-right: 0; }
+    .section { width: 100%; min-width: 0; padding: 17px 14px; margin-left: 0; margin-right: 0; }
     .section h2 { font-size: 21px; line-height: 1.25; }
     .section-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
     .section-head > * { min-width: 0; max-width: 100%; }
