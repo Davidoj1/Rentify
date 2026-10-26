@@ -23,27 +23,28 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 
+// Frontend origins permitted to access the Rentify API.
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173'
+  'http://localhost:5173',
+  'https://rentify.ng',
+  'https://www.rentify.ng',
+  'https://rentify-sigma-eight.vercel.app'
 ];
 
+// CORS configuration
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow requests with no Origin header, such as
-      // direct server-to-server requests and local tools.
-      if (!origin) {
+      // Allow requests without an Origin header,
+      // such as direct server-to-server requests and local tools.
+      if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(
-        new Error('Not allowed by CORS')
-      );
-    }
+      console.warn(`Blocked by CORS: ${origin}`);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
   })
 );
 
@@ -78,11 +79,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/cloudinary', cloudinaryRoutes);
 
-const PORT =
-  process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
-const MONGO_URI =
-  process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI;
 
 async function start() {
   try {
@@ -91,31 +90,18 @@ async function start() {
         '⚠️ MONGO_URI is missing. Add it to backend/.env before launch.'
       );
     } else {
-      await mongoose.connect(
-        MONGO_URI
-      );
+      await mongoose.connect(MONGO_URI);
 
-      console.log(
-        'MongoDB connected ✅'
-      );
+      console.log('MongoDB connected ✅');
 
       await seedDefaultData();
     }
 
-    app.listen(
-      PORT,
-      () => {
-        console.log(
-          `Rentify backend running on ${PORT}`
-        );
-      }
-    );
+    app.listen(PORT, () => {
+      console.log(`Rentify backend running on ${PORT}`);
+    });
   } catch (err) {
-    console.error(
-      'Backend startup failed:',
-      err.message
-    );
-
+    console.error('Backend startup failed:', err.message);
     process.exit(1);
   }
 }
