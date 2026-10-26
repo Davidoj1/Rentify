@@ -335,7 +335,7 @@ Rentify<span>.ng</span> </div>
           top: 0;
           right: 0;
           bottom: 0;
-          width: min(88vw, 360px);
+          width: min(86vw, 380px);
           height: 100vh;
           height: 100dvh;
           max-height: none !important;
@@ -404,7 +404,7 @@ Rentify<span>.ng</span> </div>
           color: #172033;
         }
         @media (max-width: 699px) {
-          .drawer .panel { width: min(88vw, 380px); padding: 26px 20px max(24px, env(safe-area-inset-bottom)); gap: 11px; }
+          .drawer .panel { width: min(86vw, 380px); padding: 26px 20px max(24px, env(safe-area-inset-bottom)); gap: 11px; }
           .drawer .panel h2 { margin-top: 34px; margin-bottom: 12px; font-size: 24px; }
           .drawer .panel > a { min-height: 50px; width: 100%; padding: 14px 16px; font-size: 16px; font-weight: 750; }
           .drawer .panel > button:not(.close) { min-height: 50px; margin-top: auto; }
