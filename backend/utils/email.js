@@ -1,24 +1,22 @@
-const RESEND_API_URL = 'https://api.resend.com/emails';
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
 function getConfig() {
   return {
-    apiKey: process.env.RESEND_API_KEY || '',
-    from:
-      process.env.EMAIL_FROM ||
-      'Rentify <onboarding@resend.dev>'
+    apiKey: process.env.BREVO_API_KEY || '',
+    from: {
+      email: process.env.BREVO_SENDER_EMAIL || '',
+      name: process.env.BREVO_SENDER_NAME || 'Rentify'
+    }
   };
 }
 
 export function getEmailMode() {
-  const {
-    apiKey,
-    from
-  } = getConfig();
+  const { apiKey, from } = getConfig();
 
   return {
-    provider: 'Resend',
-    configured: Boolean(apiKey),
-    from
+    provider: 'Brevo',
+    configured: Boolean(apiKey && from.email),
+    from: `${from.name} <${from.email}>`
   };
 }
 
@@ -137,14 +135,11 @@ export async function sendEmail({
   html,
   idempotencyKey
 }) {
-  const {
-    apiKey,
-    from
-  } = getConfig();
+  const { apiKey, from } = getConfig();
 
-  if (!apiKey) {
+  if (!apiKey || !from.email) {
     console.warn(
-      `Email skipped: RESEND_API_KEY is not configured. Subject: ${subject}`
+      `Email skipped: Brevo configuration is missing. Subject: ${subject}`
     );
 
     return {
@@ -153,74 +148,53 @@ export async function sendEmail({
     };
   }
 
-  const recipients =
-    Array.isArray(to)
-      ? to
-      : [to];
+  const recipients = Array.isArray(to) ? to : [to];
 
-  const validRecipients =
-    recipients
-      .map(value =>
-        safeString(value)
-      )
-      .filter(Boolean);
+  const validRecipients = recipients
+    .map(value => safeString(value))
+    .filter(Boolean);
 
   if (!validRecipients.length) {
-    throw new Error(
-      'Email recipient is missing.'
-    );
+    throw new Error('Email recipient is missing.');
   }
 
-  const response =
-    await fetch(
-      RESEND_API_URL,
-      {
-        method: 'POST',
+  const response = await fetch(BREVO_API_URL, {
+    method: 'POST',
 
-        headers: {
-          Authorization:
-            `Bearer ${apiKey}`,
+    headers: {
+      'api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
 
-          'Content-Type':
-            'application/json',
+    body: JSON.stringify({
+      sender: {
+        name: from.name,
+        email: from.email
+      },
 
-          ...(idempotencyKey
-            ? {
-                'Idempotency-Key':
-                  safeString(
-                    idempotencyKey
-                  )
-              }
-            : {})
-        },
+      to: validRecipients.map(email => ({ email })),
 
-        body: JSON.stringify({
-          from,
-          to: validRecipients,
-          subject:
-            safeString(subject),
-          html
-        })
-      }
-    );
+      subject: safeString(subject),
 
-  const data =
-    await response
-      .json()
-      .catch(() => ({}));
+      htmlContent: html
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     const message =
       data?.message ||
-      'Resend could not send the email.';
+      data?.code ||
+      'Brevo could not send the email.';
 
     throw new Error(message);
   }
 
   return {
     skipped: false,
-    id:
-      data?.id || null
+    id: data?.messageId || null
   };
 }
 
