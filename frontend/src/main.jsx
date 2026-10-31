@@ -1106,7 +1106,7 @@ try {
    */
 
   const paymentUrl =
-    res?.payment?.authorization_url;
+  res?.payment?.authorizationUrl;
 
   if (!paymentUrl) {
     throw new Error(
