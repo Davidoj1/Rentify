@@ -5,6 +5,7 @@ import Listing from '../models/Listing.js';
 import Message from '../models/Message.js';
 import { auth } from '../middleware/auth.js';
 import { cleanBooking } from '../utils/format.js';
+
 import {
   getPaymentMode,
   initializePayment,
@@ -21,6 +22,7 @@ const router = express.Router();
 
 const MAX_BOOKING_DAYS = 365;
 const MAX_DATE_YEARS_AHEAD = 2;
+const PAYMENT_HOLD_MINUTES = 15;
 
 async function sendEmailSafely(label, send) {
   try {
@@ -34,8 +36,10 @@ const nights = (a, b) =>
   Math.max(
     1,
     Math.ceil(
-      (new Date(`${b}T00:00:00Z`) -
-        new Date(`${a}T00:00:00Z`)) /
+      (
+        new Date(`${b}T00:00:00Z`) -
+        new Date(`${a}T00:00:00Z`)
+      ) /
         (1000 * 60 * 60 * 24)
     )
   );
@@ -69,8 +73,7 @@ function isValidDateOnly(value) {
 
   return (
     !Number.isNaN(date.getTime()) &&
-    date.toISOString().slice(0, 10) ===
-      value
+    date.toISOString().slice(0, 10) === value
   );
 }
 
@@ -104,9 +107,7 @@ function isValidReference(reference) {
     typeof reference === 'string' &&
     reference.length >= 8 &&
     reference.length <= 100 &&
-    /^[A-Za-z0-9._:-]+$/.test(
-      reference
-    )
+    /^[A-Za-z0-9._:-]+$/.test(reference)
   );
 }
 
@@ -123,7 +124,7 @@ function toNumber(value) {
 
 /*
 |--------------------------------------------------------------------------
-| Automatically complete expired bookings
+| Automatically complete expired rental bookings
 |--------------------------------------------------------------------------
 */
 async function completeExpiredBookings() {
@@ -155,6 +156,86 @@ async function completeExpiredBookings() {
 
 /*
 |--------------------------------------------------------------------------
+| Automatically release expired payment holds
+|--------------------------------------------------------------------------
+|
+| Pending bookings reserve dates for 15 minutes.
+|
+| Older pending bookings without expiresAt are
+| expired using their createdAt timestamp.
+|
+| This function only expires pending_payment records.
+| It does not change failed records into another status.
+|--------------------------------------------------------------------------
+*/
+async function expirePendingBookings() {
+  const now = new Date();
+
+  const legacyCutoff = new Date(
+    now.getTime() -
+      PAYMENT_HOLD_MINUTES * 60 * 1000
+  );
+
+  await Booking.updateMany(
+    {
+      status: 'pending_payment',
+
+      $or: [
+        {
+          expiresAt: {
+            $lte: now
+          }
+        },
+
+        {
+          expiresAt: {
+            $exists: false
+          },
+
+          createdAt: {
+            $lte: legacyCutoff
+          }
+        }
+      ]
+    },
+    {
+      $set: {
+        status: 'failed'
+      }
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Determine whether a booking's payment hold expired
+|--------------------------------------------------------------------------
+|
+| This checks the actual expiry time.
+| It does not treat every failed booking as expired.
+|--------------------------------------------------------------------------
+*/
+function isPaymentHoldExpired(booking) {
+  const now = new Date();
+
+  if (booking.expiresAt) {
+    return new Date(booking.expiresAt) <= now;
+  }
+
+  if (booking.createdAt) {
+    const legacyExpiry = new Date(
+      new Date(booking.createdAt).getTime() +
+        PAYMENT_HOLD_MINUTES * 60 * 1000
+    );
+
+    return legacyExpiry <= now;
+  }
+
+  return false;
+}
+
+/*
+|--------------------------------------------------------------------------
 | GET /api/bookings
 |--------------------------------------------------------------------------
 */
@@ -164,12 +245,10 @@ router.get(
   async (req, res) => {
     try {
       await completeExpiredBookings();
+      await expirePendingBookings();
 
-      const userId =
-        req.user._id;
-
-      const role =
-        req.user.role;
+      const userId = req.user._id;
+      const role = req.user.role;
 
       let query;
 
@@ -201,7 +280,7 @@ router.get(
             createdAt: -1
           });
 
-      res.json({
+      return res.json({
         bookings:
           bookings.map(
             booking =>
@@ -217,7 +296,7 @@ router.get(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         message:
           'Could not load bookings.'
       });
@@ -229,8 +308,7 @@ router.get(
 |--------------------------------------------------------------------------
 | POST /api/bookings
 |--------------------------------------------------------------------------
-| Creates a pending booking and initializes
-| the Paystack payment.
+| Creates a pending booking and initializes Paystack.
 |--------------------------------------------------------------------------
 */
 router.post(
@@ -240,8 +318,7 @@ router.post(
     let booking = null;
 
     try {
-      const body =
-        req.body || {};
+      const body = req.body || {};
 
       const {
         listingId,
@@ -252,11 +329,7 @@ router.post(
       /*
        * Validate listing ID.
        */
-      if (
-        !isValidObjectId(
-          listingId
-        )
-      ) {
+      if (!isValidObjectId(listingId)) {
         return res.status(400).json({
           message:
             'Invalid listing ID.'
@@ -267,12 +340,8 @@ router.post(
        * Validate dates.
        */
       if (
-        !isValidDateOnly(
-          startDate
-        ) ||
-        !isValidDateOnly(
-          endDate
-        )
+        !isValidDateOnly(startDate) ||
+        !isValidDateOnly(endDate)
       ) {
         return res.status(400).json({
           message:
@@ -280,19 +349,16 @@ router.post(
         });
       }
 
-      const start =
-        new Date(
-          `${startDate}T00:00:00Z`
-        );
+      const start = new Date(
+        `${startDate}T00:00:00Z`
+      );
 
-      const end =
-        new Date(
-          `${endDate}T00:00:00Z`
-        );
+      const end = new Date(
+        `${endDate}T00:00:00Z`
+      );
 
       /*
-       * End date must be after
-       * start date.
+       * End date must be after start date.
        */
       if (end <= start) {
         return res.status(400).json({
@@ -302,12 +368,9 @@ router.post(
       }
 
       /*
-       * Start date cannot be in
-       * the past.
+       * Start date cannot be in the past.
        */
-      if (
-        start < startOfTodayUtc()
-      ) {
+      if (start < startOfTodayUtc()) {
         return res.status(400).json({
           message:
             'Booking start date cannot be in the past.'
@@ -315,33 +378,24 @@ router.post(
       }
 
       /*
-       * Do not allow bookings
-       * more than two years ahead.
+       * Do not allow bookings more than two years ahead.
        */
-      if (
-        start >
-        maxAllowedStartDateUtc()
-      ) {
+      if (start > maxAllowedStartDateUtc()) {
         return res.status(400).json({
           message:
             `Booking start date cannot be more than ${MAX_DATE_YEARS_AHEAD} years ahead.`
         });
       }
 
-      const days =
-        nights(
-          startDate,
-          endDate
-        );
+      const days = nights(
+        startDate,
+        endDate
+      );
 
       /*
-       * Prevent excessively long
-       * bookings.
+       * Prevent excessively long bookings.
        */
-      if (
-        days >
-        MAX_BOOKING_DAYS
-      ) {
+      if (days > MAX_BOOKING_DAYS) {
         return res.status(400).json({
           message:
             `Booking duration cannot exceed ${MAX_BOOKING_DAYS} days.`
@@ -352,9 +406,7 @@ router.post(
        * Load listing.
        */
       const listing =
-        await Listing.findById(
-          listingId
-        );
+        await Listing.findById(listingId);
 
       if (!listing) {
         return res.status(404).json({
@@ -364,16 +416,11 @@ router.post(
       }
 
       /*
-       * The renter cannot book
-       * their own listing.
+       * The renter cannot book their own listing.
        */
       if (
-        String(
-          listing.ownerId
-        ) ===
-        String(
-          req.user._id
-        )
+        String(listing.ownerId) ===
+        String(req.user._id)
       ) {
         return res.status(400).json({
           message:
@@ -384,10 +431,7 @@ router.post(
       /*
        * Listing must be available.
        */
-      if (
-        listing.available ===
-        false
-      ) {
+      if (listing.available === false) {
         return res.status(400).json({
           message:
             'This listing is currently unavailable.'
@@ -395,13 +439,11 @@ router.post(
       }
 
       /*
-       * Only active listings
-       * can be booked.
+       * Only active listings can be booked.
        */
       if (
         listing.status &&
-        listing.status !==
-          'active'
+        listing.status !== 'active'
       ) {
         return res.status(400).json({
           message:
@@ -412,10 +454,7 @@ router.post(
       /*
        * Validate listing price.
        */
-      const price =
-        toNumber(
-          listing.price
-        );
+      const price = toNumber(listing.price);
 
       if (
         price === null ||
@@ -430,16 +469,12 @@ router.post(
       /*
        * Platform fee.
        */
-      const feeRate =
-        Number(
-          process.env.PLATFORM_FEE_RATE ||
-            0.04
-        );
+      const feeRate = Number(
+        process.env.PLATFORM_FEE_RATE || 0.04
+      );
 
       if (
-        !Number.isFinite(
-          feeRate
-        ) ||
+        !Number.isFinite(feeRate) ||
         feeRate < 0 ||
         feeRate > 1
       ) {
@@ -449,23 +484,22 @@ router.post(
         });
       }
 
-      const subtotal =
-        price * days;
-
-      const platformFee =
-        subtotal * feeRate;
-
-      const total =
-        subtotal +
-        platformFee;
+      const subtotal = price * days;
+      const platformFee = subtotal * feeRate;
+      const total = subtotal + platformFee;
 
       /*
-       * Check for overlapping
-       * bookings.
+       * Release expired holds before checking availability.
+       */
+      await expirePendingBookings();
+
+      /*
+       * Check for overlapping bookings.
        */
       const existingBookings =
         await Booking.find({
           listingId,
+
           status: {
             $in: [
               'pending_payment',
@@ -494,8 +528,7 @@ router.post(
       }
 
       /*
-       * Create unique payment
-       * reference.
+       * Create unique payment reference.
        */
       const reference =
         `RNT-${Date.now()}-${Math.random()
@@ -503,42 +536,37 @@ router.post(
           .slice(2, 8)
           .toUpperCase()}`;
 
-      booking =
-        await Booking.create({
-          listingId:
-            listing._id,
+      /*
+       * Create the 15-minute payment hold.
+       */
+      const expiresAt = new Date(
+        Date.now() +
+          PAYMENT_HOLD_MINUTES * 60 * 1000
+      );
 
-          renterId:
-            req.user._id,
+      booking = await Booking.create({
+        listingId: listing._id,
+        renterId: req.user._id,
+        ownerId: listing.ownerId,
 
-          ownerId:
-            listing.ownerId,
+        startDate,
+        endDate,
+        days,
 
-          startDate,
-          endDate,
+        subtotal:
+          Math.round(subtotal * 100) / 100,
 
-          days,
+        platformFee:
+          Math.round(platformFee * 100) / 100,
 
-          subtotal:
-            Math.round(
-              subtotal * 100
-            ) / 100,
+        total:
+          Math.round(total * 100) / 100,
 
-          platformFee:
-            Math.round(
-              platformFee * 100
-            ) / 100,
+        reference,
+        expiresAt,
 
-          total:
-            Math.round(
-              total * 100
-            ) / 100,
-
-          reference,
-
-          status:
-            'pending_payment'
-        });
+        status: 'pending_payment'
+      });
 
       /*
        * Initialize Paystack.
@@ -546,48 +574,47 @@ router.post(
       let payment;
 
       try {
-        payment =
-          await initializePayment({
-            email:
-              req.user.email,
+        payment = await initializePayment({
+          email: req.user.email,
+          amount: booking.total,
+          reference: booking.reference,
 
-            amount:
-              booking.total,
+          metadata: {
+            bookingId: String(booking._id),
+            listingId: String(listing._id),
+            renterId: String(req.user._id),
+            ownerId: String(listing.ownerId)
+          }
+        });
 
-            reference:
-              booking.reference,
+        /*
+         * Validate the initialization response.
+         */
+        if (
+          !payment ||
+          !payment.authorization_url ||
+          !payment.reference
+        ) {
+          throw new Error(
+            'Paystack returned an incomplete payment response.'
+          );
+        }
 
-            metadata: {
-              bookingId:
-                String(
-                  booking._id
-                ),
-
-              listingId:
-                String(
-                  listing._id
-                ),
-
-              renterId:
-                String(
-                  req.user._id
-                ),
-
-              ownerId:
-                String(
-                  listing.ownerId
-                )
-            }
-          });
+        /*
+         * Ensure the returned reference matches the booking.
+         */
+        if (payment.reference !== booking.reference) {
+          throw new Error(
+            'Paystack returned a different payment reference.'
+          );
+        }
       } catch (paymentError) {
         console.error(
           'Paystack initialization error:',
           paymentError
         );
 
-        booking.status =
-          'failed';
-
+        booking.status = 'failed';
         await booking.save();
 
         return res.status(502).json({
@@ -596,12 +623,11 @@ router.post(
         });
       }
 
-      res.status(201).json({
-        booking:
-          cleanBooking(
-            booking,
-            listing
-          ),
+      return res.status(201).json({
+        booking: cleanBooking(
+          booking,
+          listing
+        ),
 
         payment: {
           authorizationUrl:
@@ -614,8 +640,7 @@ router.post(
             payment.reference
         },
 
-        paymentMode:
-          getPaymentMode()
+        paymentMode: getPaymentMode()
       });
     } catch (error) {
       console.error(
@@ -625,9 +650,7 @@ router.post(
 
       if (booking) {
         try {
-          booking.status =
-            'failed';
-
+          booking.status = 'failed';
           await booking.save();
         } catch (saveError) {
           console.error(
@@ -637,7 +660,7 @@ router.post(
         }
       }
 
-      res.status(500).json({
+      return res.status(500).json({
         message:
           'Could not create booking.'
       });
@@ -651,13 +674,7 @@ router.post(
 |--------------------------------------------------------------------------
 | Verifies the Paystack payment.
 |
-| Only the renter who owns the booking can verify it.
-|
-| Payment is accepted only when:
-|   1. Paystack transaction status is success
-|   2. Paystack reference matches the booking reference
-|   3. Paystack amount matches booking.total
-|   4. Currency is NGN when Paystack provides it
+| Only the renter who owns the booking can verify payment.
 |--------------------------------------------------------------------------
 */
 router.post(
@@ -665,27 +682,21 @@ router.post(
   auth,
   async (req, res) => {
     try {
-      const reference =
-        req.params.reference;
+      const reference = req.params.reference;
 
-      if (
-        !isValidReference(
-          reference
-        )
-      ) {
+      if (!isValidReference(reference)) {
         return res.status(400).json({
           message:
             'Invalid payment reference.'
         });
       }
 
-      const booking =
-        await Booking.findOne({
-          reference
-        })
-          .populate('listingId')
-          .populate('renterId')
-          .populate('ownerId');
+      const booking = await Booking.findOne({
+        reference
+      })
+        .populate('listingId')
+        .populate('renterId')
+        .populate('ownerId');
 
       if (!booking) {
         return res.status(404).json({
@@ -695,17 +706,14 @@ router.post(
       }
 
       /*
-       * Only the renter who created
-       * the booking may verify payment.
+       * Only the renter who created this booking
+       * may verify payment.
        */
       if (
         String(
           booking.renterId?._id ||
-            booking.renterId
-        ) !==
-        String(
-          req.user._id
-        )
+          booking.renterId
+        ) !== String(req.user._id)
       ) {
         return res.status(403).json({
           message:
@@ -714,48 +722,53 @@ router.post(
       }
 
       /*
-       * Idempotent handling for
-       * already completed payment.
+       * Idempotent handling for already completed payment.
        */
       if (
         [
           'paid',
           'confirmed',
           'completed'
-        ].includes(
-          booking.status
-        )
+        ].includes(booking.status)
       ) {
         return res.json({
-          booking:
-            cleanBooking(
-              booking,
-              booking.listingId
-            ),
+          booking: cleanBooking(
+            booking,
+            booking.listingId
+          ),
 
           verification: {
-            reference:
-              booking.reference,
+            reference: booking.reference,
+            status: 'success',
 
-            status:
-              'success',
-
-            amount:
-              Math.round(
-                booking.total *
-                  100
-              )
+            amount: Math.round(
+              booking.total * 100
+            )
           }
         });
       }
 
       /*
-       * Only pending payments
-       * may be verified.
+       * Only pending payments and genuinely expired
+       * payment holds can be verified.
+       *
+       * A failed booking caused by a Paystack
+       * initialization error is not automatically
+       * considered expired.
        */
+      const holdExpired =
+        isPaymentHoldExpired(booking);
+
+      if (booking.status === 'failed' && !holdExpired) {
+        return res.status(400).json({
+          message:
+            'This booking failed before its payment hold expired. Please contact Rentify support if you believe a payment was made.'
+        });
+      }
+
       if (
-        booking.status !==
-        'pending_payment'
+        booking.status !== 'pending_payment' &&
+        booking.status !== 'failed'
       ) {
         return res.status(400).json({
           message:
@@ -766,10 +779,9 @@ router.post(
       let verification;
 
       try {
-        verification =
-          await verifyPayment(
-            reference
-          );
+        verification = await verifyPayment(
+          reference
+        );
       } catch (verificationError) {
         console.error(
           'Paystack verification error:',
@@ -783,17 +795,13 @@ router.post(
       }
 
       /*
-       * Paystack transaction must
-       * report success.
+       * Paystack transaction must report success.
        */
-      if (
-        verification?.status !==
-        'success'
-      ) {
-        booking.status =
-          'failed';
-
-        await booking.save();
+      if (verification?.status !== 'success') {
+        if (booking.status === 'pending_payment') {
+          booking.status = 'failed';
+          await booking.save();
+        }
 
         return res.status(400).json({
           message:
@@ -805,80 +813,128 @@ router.post(
        * Reference must match exactly.
        */
       if (
-        verification.reference !==
-        booking.reference
+        verification.reference !== booking.reference
       ) {
-        booking.status =
-          'failed';
-
-        await booking.save();
+        console.error(
+          'Paystack reference mismatch:',
+          {
+            expected: booking.reference,
+            received: verification.reference
+          }
+        );
 
         return res.status(400).json({
           message:
-            'Payment reference does not match this booking.'
+            'Payment reference does not match this booking. Please contact Rentify support.'
         });
       }
 
       /*
-       * Paystack amount is in
-       * the smallest currency unit.
+       * Paystack amount is in the smallest currency unit.
        */
-      const expectedAmount =
-        Math.round(
-          booking.total * 100
-        );
+      const expectedAmount = Math.round(
+        booking.total * 100
+      );
 
-      const verifiedAmount =
-        Number(
-          verification.amount
-        );
+      const verifiedAmount = Number(
+        verification.amount
+      );
 
       if (
-        !Number.isFinite(
-          verifiedAmount
-        ) ||
-        verifiedAmount !==
-          expectedAmount
+        !Number.isFinite(verifiedAmount) ||
+        verifiedAmount !== expectedAmount
       ) {
-        booking.status =
-          'failed';
-
-        await booking.save();
+        console.error(
+          'Paystack amount mismatch:',
+          {
+            expected: expectedAmount,
+            received: verification.amount
+          }
+        );
 
         return res.status(400).json({
           message:
-            'Payment amount does not match this booking.'
+            'Payment amount does not match this booking. Please contact Rentify support.'
         });
       }
 
       /*
-       * When Paystack provides
-       * currency, require NGN.
+       * When Paystack provides currency, require NGN.
        */
       if (
         verification.currency &&
-        verification.currency !==
-          'NGN'
+        verification.currency !== 'NGN'
       ) {
-        booking.status =
-          'failed';
-
-        await booking.save();
-
         return res.status(400).json({
           message:
-            'Payment currency does not match this booking.'
+            'Payment currency does not match this booking. Please contact Rentify support.'
         });
       }
 
       /*
-       * Payment is now verified.
+       * Check whether the hold has expired now.
        */
-      booking.status =
-        'paid';
+      const wasExpired =
+        isPaymentHoldExpired(booking);
 
-      booking.paidAt =
-        new Date();
+      if (wasExpired) {
+        /*
+         * Another booking may have reserved these dates
+         * after this booking's payment hold expired.
+         */
+        const otherBookings = await Booking.find({
+          _id: {
+            $ne: booking._id
+          },
+
+          listingId:
+            booking.listingId?._id ||
+            booking.listingId,
+
+          status: {
+            $in: [
+              'pending_payment',
+              'paid',
+              'confirmed'
+            ]
+          }
+        });
+
+        const datesNowTaken =
+          otherBookings.some(
+            existing =>
+              overlaps(
+                booking.startDate,
+                booking.endDate,
+                existing.startDate,
+                existing.endDate
+              )
+          );
+
+        if (datesNowTaken) {
+          /*
+           * Paystack received the money, but the dates
+           * are no longer available.
+           *
+           * Do not mark this booking as paid.
+           * Record the payment for support follow-up.
+           */
+          booking.paymentReceivedAt = new Date();
+
+          await booking.save();
+
+          return res.status(409).json({
+            message:
+              'Your payment was received, but the booking hold expired and these dates are no longer available. Please contact Rentify support for assistance with a refund.'
+          });
+        }
+      }
+
+      /*
+       * Payment is verified and the dates are still free.
+       */
+      booking.status = 'paid';
+      booking.paidAt = new Date();
 
       await booking.save();
 
@@ -887,21 +943,15 @@ router.post(
        */
       const existingSystemMessage =
         await Message.findOne({
-          bookingId:
-            booking._id,
-
+          bookingId: booking._id,
           from: 'system'
         });
 
-      if (
-        !existingSystemMessage
-      ) {
+      if (!existingSystemMessage) {
         await Message.create({
-          bookingId:
-            booking._id,
-
-          listingId:
-            booking.listingId._id,
+          bookingId: booking._id,
+          listingId: booking.listingId?._id ||
+            booking.listingId,
 
           from: 'system',
 
@@ -912,19 +962,14 @@ router.post(
 
       /*
        * Renter payment confirmation email.
-       *
-       * Email failure must never
-       * break the successful payment.
+       * Email failure must never break successful payment.
        */
       await sendEmailSafely(
         'Payment confirmation email',
         () =>
           sendPaymentConfirmationEmail({
-            email:
-              booking.renterId?.email,
-
-            name:
-              booking.renterId?.name,
+            email: booking.renterId?.email,
+            name: booking.renterId?.name,
 
             bookingReference:
               booking.reference,
@@ -932,32 +977,22 @@ router.post(
             listingTitle:
               booking.listingId?.title,
 
-            startDate:
-              booking.startDate,
-
-            endDate:
-              booking.endDate,
-
-            total:
-              booking.total
+            startDate: booking.startDate,
+            endDate: booking.endDate,
+            total: booking.total
           })
       );
 
       /*
        * Owner new paid booking email.
-       *
-       * Email failure must never
-       * break the successful payment.
+       * Email failure must never break successful payment.
        */
       await sendEmailSafely(
         'Owner new booking email',
         () =>
           sendOwnerNewBookingEmail({
-            email:
-              booking.ownerId?.email,
-
-            name:
-              booking.ownerId?.name,
+            email: booking.ownerId?.email,
+            name: booking.ownerId?.name,
 
             bookingReference:
               booking.reference,
@@ -968,33 +1003,22 @@ router.post(
             renterName:
               booking.renterId?.name,
 
-            startDate:
-              booking.startDate,
-
-            endDate:
-              booking.endDate,
-
-            total:
-              booking.total
+            startDate: booking.startDate,
+            endDate: booking.endDate,
+            total: booking.total
           })
       );
 
-      res.json({
-        booking:
-          cleanBooking(
-            booking,
-            booking.listingId
-          ),
+      return res.json({
+        booking: cleanBooking(
+          booking,
+          booking.listingId
+        ),
 
         verification: {
-          reference:
-            verification.reference,
-
-          status:
-            verification.status,
-
-          amount:
-            verification.amount
+          reference: verification.reference,
+          status: verification.status,
+          amount: verification.amount
         }
       });
     } catch (error) {
@@ -1003,23 +1027,20 @@ router.post(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         message:
           'Could not verify booking payment.'
       });
     }
   }
 );
-
 /*
 |--------------------------------------------------------------------------
 | PATCH /api/bookings/:id/status
 |--------------------------------------------------------------------------
-| Only the listing owner/admin can manage
-| booking lifecycle statuses.
+| Only the listing owner/admin can manage booking lifecycle statuses.
 |
-| Payment status itself comes only from
-| Paystack verification.
+| Payment status itself comes only from Paystack verification.
 |--------------------------------------------------------------------------
 */
 router.patch(
@@ -1028,31 +1049,23 @@ router.patch(
   async (req, res) => {
     try {
       await completeExpiredBookings();
+      await expirePendingBookings();
 
-      const bookingId =
-        req.params.id;
+      const bookingId = req.params.id;
 
-      if (
-        !isValidObjectId(
-          bookingId
-        )
-      ) {
+      if (!isValidObjectId(bookingId)) {
         return res.status(400).json({
           message:
             'Invalid booking ID.'
         });
       }
 
-      const body =
-        req.body || {};
+      const body = req.body || {};
 
-      const requestedStatus =
-        body.status;
+      const requestedStatus = body.status;
 
       const booking =
-        await Booking.findById(
-          bookingId
-        );
+        await Booking.findById(bookingId);
 
       if (!booking) {
         return res.status(404).json({
@@ -1062,25 +1075,17 @@ router.patch(
       }
 
       /*
-       * Only owner/admin can
-       * manage booking status.
+       * Only owner/admin can manage booking status.
        */
       const isAdmin =
-        req.user.role ===
-        'admin';
+        req.user.role === 'admin' ||
+        req.userRoles?.includes('admin');
 
       const isOwner =
-        String(
-          booking.ownerId
-        ) ===
-        String(
-          req.user._id
-        );
+        String(booking.ownerId) ===
+        String(req.user._id);
 
-      if (
-        !isAdmin &&
-        !isOwner
-      ) {
+      if (!isAdmin && !isOwner) {
         return res.status(403).json({
           message:
             'You are not allowed to update this booking.'
@@ -1107,30 +1112,24 @@ router.patch(
       /*
        * Valid lifecycle transitions:
        *
-       * paid      -> confirmed | cancelled
-       * confirmed -> completed | cancelled
+       * paid       -> confirmed | cancelled
+       * confirmed  -> completed | cancelled
        * completed/cancelled -> no changes
        */
       const validTransition =
         (
-          booking.status ===
-            'paid' &&
+          booking.status === 'paid' &&
           [
             'confirmed',
             'cancelled'
-          ].includes(
-            requestedStatus
-          )
+          ].includes(requestedStatus)
         ) ||
         (
-          booking.status ===
-            'confirmed' &&
+          booking.status === 'confirmed' &&
           [
             'completed',
             'cancelled'
-          ].includes(
-            requestedStatus
-          )
+          ].includes(requestedStatus)
         );
 
       if (!validTransition) {
@@ -1141,52 +1140,36 @@ router.patch(
       }
 
       /*
-       * A paid booking whose rental period
-       * has already ended cannot be confirmed
-       * after the fact.
+       * A paid booking whose rental period has already
+       * ended cannot be confirmed after the fact.
        */
       if (
-        requestedStatus ===
-          'confirmed' &&
-        booking.status ===
-          'paid' &&
+        requestedStatus === 'confirmed' &&
+        booking.status === 'paid' &&
         new Date(
           `${booking.endDate}T00:00:00Z`
         ) <= new Date()
       ) {
-        booking.status =
-          'completed';
+        booking.status = 'completed';
       } else {
-        booking.status =
-          requestedStatus;
+        booking.status = requestedStatus;
       }
 
       await booking.save();
 
-      await booking.populate(
-        'listingId'
-      );
-
-      await booking.populate(
-        'renterId'
-      );
-
-      await booking.populate(
-        'ownerId'
-      );
+      await booking.populate('listingId');
+      await booking.populate('renterId');
+      await booking.populate('ownerId');
 
       /*
-       * Notify renter about
-       * booking lifecycle changes.
+       * Notify renter about booking lifecycle changes.
        */
       if (
         [
           'confirmed',
           'cancelled',
           'completed'
-        ].includes(
-          booking.status
-        )
+        ].includes(booking.status)
       ) {
         await sendEmailSafely(
           `Renter ${booking.status} email`,
@@ -1217,13 +1200,9 @@ router.patch(
       }
 
       /*
-       * Notify owner when a
-       * booking is cancelled.
+       * Notify owner when a booking is cancelled.
        */
-      if (
-        booking.status ===
-        'cancelled'
-      ) {
+      if (booking.status === 'cancelled') {
         await sendEmailSafely(
           'Owner cancellation email',
           () =>
@@ -1252,12 +1231,11 @@ router.patch(
         );
       }
 
-      res.json({
-        booking:
-          cleanBooking(
-            booking,
-            booking.listingId
-          )
+      return res.json({
+        booking: cleanBooking(
+          booking,
+          booking.listingId
+        )
       });
     } catch (error) {
       console.error(
@@ -1265,7 +1243,7 @@ router.patch(
         error
       );
 
-      res.status(500).json({
+      return res.status(500).json({
         message:
           'Could not update booking status.'
       });

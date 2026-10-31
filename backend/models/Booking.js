@@ -12,6 +12,14 @@ const bookingSchema = new mongoose.Schema(
     platformFee: { type: Number, required: true },
     total: { type: Number, required: true },
     reference: { type: String, required: true, unique: true, index: true },
+    expiresAt: {
+      type: Date,
+      required: true,
+      index: true
+    },
+    paymentReceivedAt: {
+      type: Date
+    },
     status: {
       type: String,
       enum: ['pending_payment', 'paid', 'confirmed', 'cancelled', 'completed', 'failed'],
